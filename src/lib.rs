@@ -97,16 +97,15 @@
 
 #![no_std]
 #![deny(missing_debug_implementations)]
-#![deny(missing_docs)]
-#![deny(warnings)]
 #![deny(missing_copy_implementations)]
 #![deny(trivial_casts)]
 #![deny(trivial_numeric_casts)]
 #![deny(unsafe_code)]
-#![deny(unstable_features)]
 #![deny(unused_import_braces)]
 #![deny(unused_qualifications)]
 #![deny(broken_intra_doc_links)]
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 
 mod brightness;
 pub mod command;
@@ -116,15 +115,12 @@ pub mod mode;
 pub mod prelude;
 pub mod rotation;
 pub mod size;
-#[doc(hidden)]
-pub mod test_helpers;
 
 pub use crate::i2c_interface::I2CDisplayInterface;
 use crate::mode::BasicMode;
 use brightness::Brightness;
 use command::{AddrMode, Command, VcomhLevel};
 use display_interface::{DataFormat::U8, DisplayError, WriteOnlyDataCommand};
-use display_interface_spi::{SPIInterface, SPIInterfaceNoCS};
 use embedded_hal::{blocking::delay::DelayMs, digital::v2::OutputPin};
 use error::Error;
 use mode::{BufferedGraphicsMode, TerminalMode};
@@ -194,27 +190,35 @@ where
     }
 
     /// Initialise the display in one of the available addressing modes.
-    pub fn init_with_addr_mode(&mut self, mode: AddrMode) -> Result<(), DisplayError> {
+    pub async fn init_with_addr_mode(&mut self, mode: AddrMode) -> Result<(), DisplayError> {
         let rotation = self.rotation;
 
-        Command::DisplayOn(false).send(&mut self.interface)?;
-        Command::DisplayClockDiv(0x8, 0x0).send(&mut self.interface)?;
-        Command::Multiplex(SIZE::HEIGHT - 1).send(&mut self.interface)?;
-        Command::DisplayOffset(0).send(&mut self.interface)?;
-        Command::StartLine(0).send(&mut self.interface)?;
+        Command::DisplayOn(false).send(&mut self.interface).await?;
+        Command::DisplayClockDiv(0x8, 0x0)
+            .send(&mut self.interface)
+            .await?;
+        Command::Multiplex(SIZE::HEIGHT - 1)
+            .send(&mut self.interface)
+            .await?;
+        Command::DisplayOffset(0).send(&mut self.interface).await?;
+        Command::StartLine(0).send(&mut self.interface).await?;
         // TODO: Ability to turn charge pump on/off
-        Command::ChargePump(true).send(&mut self.interface)?;
-        Command::AddressMode(mode).send(&mut self.interface)?;
+        Command::ChargePump(true).send(&mut self.interface).await?;
+        Command::AddressMode(mode).send(&mut self.interface).await?;
 
-        self.size.configure(&mut self.interface)?;
-        self.set_rotation(rotation)?;
+        self.size.configure(&mut self.interface).await?;
+        self.set_rotation(rotation).await?;
 
-        self.set_brightness(Brightness::default())?;
-        Command::VcomhDeselect(VcomhLevel::Auto).send(&mut self.interface)?;
-        Command::AllOn(false).send(&mut self.interface)?;
-        Command::Invert(false).send(&mut self.interface)?;
-        Command::EnableScroll(false).send(&mut self.interface)?;
-        Command::DisplayOn(true).send(&mut self.interface)?;
+        self.set_brightness(Brightness::default()).await?;
+        Command::VcomhDeselect(VcomhLevel::Auto)
+            .send(&mut self.interface)
+            .await?;
+        Command::AllOn(false).send(&mut self.interface).await?;
+        Command::Invert(false).send(&mut self.interface).await?;
+        Command::EnableScroll(false)
+            .send(&mut self.interface)
+            .await?;
+        Command::DisplayOn(true).send(&mut self.interface).await?;
 
         self.addr_mode = mode;
 
@@ -222,8 +226,8 @@ where
     }
 
     /// Change the addressing mode
-    pub fn set_addr_mode(&mut self, mode: AddrMode) -> Result<(), DisplayError> {
-        Command::AddressMode(mode).send(&mut self.interface)?;
+    pub async fn set_addr_mode(&mut self, mode: AddrMode) -> Result<(), DisplayError> {
+        Command::AddressMode(mode).send(&mut self.interface).await?;
         self.addr_mode = mode;
         Ok(())
     }
@@ -233,7 +237,7 @@ where
     /// this method.
     ///
     /// This method takes advantage of a bounding box for faster writes.
-    pub fn bounded_draw(
+    pub async fn bounded_draw(
         &mut self,
         buffer: &[u8],
         disp_width: usize,
@@ -247,11 +251,12 @@ where
             upper_left,
             lower_right,
         )
+        .await
     }
 
     /// Send a raw buffer to the display.
-    pub fn draw(&mut self, buffer: &[u8]) -> Result<(), DisplayError> {
-        self.interface.send_data(U8(&buffer))
+    pub async fn draw(&mut self, buffer: &[u8]) -> Result<(), DisplayError> {
+        self.interface.send_data(U8(&buffer)).await
     }
 
     /// Get display dimensions, taking into account the current rotation of the display
@@ -289,25 +294,41 @@ where
     }
 
     /// Set the display rotation.
-    pub fn set_rotation(&mut self, rotation: DisplayRotation) -> Result<(), DisplayError> {
+    pub async fn set_rotation(&mut self, rotation: DisplayRotation) -> Result<(), DisplayError> {
         self.rotation = rotation;
 
         match rotation {
             DisplayRotation::Rotate0 => {
-                Command::SegmentRemap(true).send(&mut self.interface)?;
-                Command::ReverseComDir(true).send(&mut self.interface)?;
+                Command::SegmentRemap(true)
+                    .send(&mut self.interface)
+                    .await?;
+                Command::ReverseComDir(true)
+                    .send(&mut self.interface)
+                    .await?;
             }
             DisplayRotation::Rotate90 => {
-                Command::SegmentRemap(false).send(&mut self.interface)?;
-                Command::ReverseComDir(true).send(&mut self.interface)?;
+                Command::SegmentRemap(false)
+                    .send(&mut self.interface)
+                    .await?;
+                Command::ReverseComDir(true)
+                    .send(&mut self.interface)
+                    .await?;
             }
             DisplayRotation::Rotate180 => {
-                Command::SegmentRemap(false).send(&mut self.interface)?;
-                Command::ReverseComDir(false).send(&mut self.interface)?;
+                Command::SegmentRemap(false)
+                    .send(&mut self.interface)
+                    .await?;
+                Command::ReverseComDir(false)
+                    .send(&mut self.interface)
+                    .await?;
             }
             DisplayRotation::Rotate270 => {
-                Command::SegmentRemap(true).send(&mut self.interface)?;
-                Command::ReverseComDir(false).send(&mut self.interface)?;
+                Command::SegmentRemap(true)
+                    .send(&mut self.interface)
+                    .await?;
+                Command::ReverseComDir(false)
+                    .send(&mut self.interface)
+                    .await?;
             }
         };
 
@@ -315,59 +336,86 @@ where
     }
 
     /// Set mirror enabled/disabled.
-    pub fn set_mirror(&mut self, mirror: bool) -> Result<(), DisplayError> {
+    pub async fn set_mirror(&mut self, mirror: bool) -> Result<(), DisplayError> {
         if mirror {
             match self.rotation {
                 DisplayRotation::Rotate0 => {
-                    Command::SegmentRemap(false).send(&mut self.interface)?;
-                    Command::ReverseComDir(true).send(&mut self.interface)?;
+                    Command::SegmentRemap(false)
+                        .send(&mut self.interface)
+                        .await?;
+                    Command::ReverseComDir(true)
+                        .send(&mut self.interface)
+                        .await?;
                 }
                 DisplayRotation::Rotate90 => {
-                    Command::SegmentRemap(false).send(&mut self.interface)?;
-                    Command::ReverseComDir(false).send(&mut self.interface)?;
+                    Command::SegmentRemap(false)
+                        .send(&mut self.interface)
+                        .await?;
+                    Command::ReverseComDir(false)
+                        .send(&mut self.interface)
+                        .await?;
                 }
                 DisplayRotation::Rotate180 => {
-                    Command::SegmentRemap(true).send(&mut self.interface)?;
-                    Command::ReverseComDir(false).send(&mut self.interface)?;
+                    Command::SegmentRemap(true)
+                        .send(&mut self.interface)
+                        .await?;
+                    Command::ReverseComDir(false)
+                        .send(&mut self.interface)
+                        .await?;
                 }
                 DisplayRotation::Rotate270 => {
-                    Command::SegmentRemap(true).send(&mut self.interface)?;
-                    Command::ReverseComDir(true).send(&mut self.interface)?;
+                    Command::SegmentRemap(true)
+                        .send(&mut self.interface)
+                        .await?;
+                    Command::ReverseComDir(true)
+                        .send(&mut self.interface)
+                        .await?;
                 }
             };
         } else {
-            self.set_rotation(self.rotation)?;
+            self.set_rotation(self.rotation).await?;
         }
         Ok(())
     }
 
     /// Change the display brightness.
-    pub fn set_brightness(&mut self, brightness: Brightness) -> Result<(), DisplayError> {
+    pub async fn set_brightness(&mut self, brightness: Brightness) -> Result<(), DisplayError> {
         // Should be moved to Brightness::new once conditions can be used in const functions
         debug_assert!(
             0 < brightness.precharge && brightness.precharge <= 15,
             "Precharge value must be between 1 and 15"
         );
 
-        Command::PreChargePeriod(1, brightness.precharge).send(&mut self.interface)?;
-        Command::Contrast(brightness.contrast).send(&mut self.interface)
+        Command::PreChargePeriod(1, brightness.precharge)
+            .send(&mut self.interface)
+            .await?;
+        Command::Contrast(brightness.contrast)
+            .send(&mut self.interface)
+            .await
     }
 
     /// Turn the display on or off. The display can be drawn to and retains all
     /// of its memory even while off.
-    pub fn set_display_on(&mut self, on: bool) -> Result<(), DisplayError> {
-        Command::DisplayOn(on).send(&mut self.interface)
+    pub async fn set_display_on(&mut self, on: bool) -> Result<(), DisplayError> {
+        Command::DisplayOn(on).send(&mut self.interface).await
     }
 
     /// Set the position in the framebuffer of the display limiting where any sent data should be
     /// drawn. This method can be used for changing the affected area on the screen as well
     /// as (re-)setting the start point of the next `draw` call.
-    pub fn set_draw_area(&mut self, start: (u8, u8), end: (u8, u8)) -> Result<(), DisplayError> {
-        Command::ColumnAddress(start.0, end.0.saturating_sub(1)).send(&mut self.interface)?;
+    pub async fn set_draw_area(
+        &mut self,
+        start: (u8, u8),
+        end: (u8, u8),
+    ) -> Result<(), DisplayError> {
+        Command::ColumnAddress(start.0, end.0.saturating_sub(1))
+            .send(&mut self.interface)
+            .await?;
 
         if self.addr_mode != AddrMode::Page {
             Command::PageAddress(start.1.into(), (end.1.saturating_sub(1)).into())
-                .send(&mut self.interface)?;
+                .send(&mut self.interface)
+                .await?;
         }
 
         Ok(())
@@ -375,8 +423,8 @@ where
 
     /// Set the column address in the framebuffer of the display where any sent data should be
     /// drawn.
-    pub fn set_column(&mut self, column: u8) -> Result<(), DisplayError> {
-        Command::ColStart(column).send(&mut self.interface)
+    pub async fn set_column(&mut self, column: u8) -> Result<(), DisplayError> {
+        Command::ColStart(column).send(&mut self.interface).await
     }
 
     /// Set the page address (row 8px high) in the framebuffer of the display where any sent data
@@ -384,11 +432,13 @@ where
     ///
     /// Note that the parameter is in pixels, but the page will be set to the start of the 8px
     /// row which contains the passed-in row.
-    pub fn set_row(&mut self, row: u8) -> Result<(), DisplayError> {
-        Command::PageStart(row.into()).send(&mut self.interface)
+    pub async fn set_row(&mut self, row: u8) -> Result<(), DisplayError> {
+        Command::PageStart(row.into())
+            .send(&mut self.interface)
+            .await
     }
 
-    fn flush_buffer_chunks(
+    async fn flush_buffer_chunks(
         interface: &mut DI,
         buffer: &[u8],
         disp_width: usize,
@@ -406,44 +456,15 @@ where
         let page_lower = upper_left.0 as usize;
         let page_upper = lower_right.0 as usize;
 
-        buffer
+        for c in buffer
             .chunks(disp_width)
             .skip(starting_page)
             .take(num_pages)
             .map(|s| &s[page_lower..page_upper])
-            .try_for_each(|c| interface.send_data(U8(&c)))
-    }
-}
-
-// SPI-only reset
-impl<SPI, DC, SIZE, MODE> Ssd1306<SPIInterfaceNoCS<SPI, DC>, SIZE, MODE> {
-    /// Reset the display.
-    pub fn reset<RST, DELAY, PinE>(
-        &mut self,
-        rst: &mut RST,
-        delay: &mut DELAY,
-    ) -> Result<(), Error<(), PinE>>
-    where
-        RST: OutputPin<Error = PinE>,
-        DELAY: DelayMs<u8>,
-    {
-        inner_reset(rst, delay)
-    }
-}
-
-// SPI-only reset
-impl<SPI, DC, CS, SIZE, MODE> Ssd1306<SPIInterface<SPI, DC, CS>, SIZE, MODE> {
-    /// Reset the display.
-    pub fn reset<RST, DELAY, PinE>(
-        &mut self,
-        rst: &mut RST,
-        delay: &mut DELAY,
-    ) -> Result<(), Error<(), PinE>>
-    where
-        RST: OutputPin<Error = PinE>,
-        DELAY: DelayMs<u8>,
-    {
-        inner_reset(rst, delay)
+        {
+            interface.send_data(U8(&c)).await?
+        }
+        Ok(())
     }
 }
 

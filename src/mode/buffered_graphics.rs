@@ -1,5 +1,7 @@
 //! Buffered graphics mode.
 
+use core::future::Future;
+
 use crate::{
     command::AddrMode,
     rotation::DisplayRotation,
@@ -49,15 +51,24 @@ where
 {
     type Error = DisplayError;
 
+    type SetRotationFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        Self: 'a;
+
+    type InitFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        Self: 'a;
+
+
     /// Set the display rotation
     ///
     /// This method resets the cursor but does not clear the screen.
-    fn set_rotation(&mut self, rot: DisplayRotation) -> Result<(), DisplayError> {
+    fn set_rotation<'a>(&'a mut self, rot: DisplayRotation) -> Self::SetRotationFuture<'a> {
         self.set_rotation(rot)
     }
 
     /// Initialise and clear the display in graphics mode.
-    fn init(&mut self) -> Result<(), DisplayError> {
+    fn init<'a>(&'a mut self) -> Self::InitFuture<'a> {
         self.clear();
         self.init_with_addr_mode(AddrMode::Horizontal)
     }
@@ -84,7 +95,7 @@ where
     /// Write out data to a display.
     ///
     /// This only updates the parts of the display that have changed since the last flush.
-    pub fn flush(&mut self) -> Result<(), DisplayError> {
+    pub async fn flush(&mut self) -> Result<(), DisplayError> {
         // Nothing to do if no pixels have changed since the last update
         if self.mode.max_x < self.mode.min_x || self.mode.max_y < self.mode.min_y {
             return Ok(());
@@ -127,7 +138,7 @@ where
                 self.set_draw_area(
                     (disp_min_x + offset_x, disp_min_y + SIZE::OFFSETY),
                     (disp_max_x + offset_x, disp_max_y + SIZE::OFFSETY),
-                )?;
+                ).await?;
 
                 Self::flush_buffer_chunks(
                     &mut self.interface,
@@ -135,13 +146,13 @@ where
                     width as usize,
                     (disp_min_x, disp_min_y),
                     (disp_max_x, disp_max_y),
-                )
+                ).await
             }
             DisplayRotation::Rotate90 | DisplayRotation::Rotate270 => {
                 self.set_draw_area(
                     (disp_min_y + offset_x, disp_min_x + SIZE::OFFSETY),
                     (disp_max_y + offset_x, disp_max_x + SIZE::OFFSETY),
-                )?;
+                ).await?;
 
                 Self::flush_buffer_chunks(
                     &mut self.interface,
@@ -149,7 +160,7 @@ where
                     height as usize,
                     (disp_min_y, disp_min_x),
                     (disp_max_y, disp_max_x),
-                )
+                ).await
             }
         }
     }

@@ -1,5 +1,5 @@
 use crate::{command::AddrMode, mode::DisplayConfig, rotation::DisplayRotation, size::*, Ssd1306};
-use core::{cmp::min, fmt};
+use core::{cmp::min, fmt, future::Future};
 use display_interface::{DisplayError, WriteOnlyDataCommand};
 
 /// Extends the [`DisplaySize`](crate::size::DisplaySize) trait
@@ -143,22 +143,34 @@ where
 {
     type Error = TerminalModeError;
 
+    type SetRotationFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        Self: 'a;
+
+    type InitFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        Self: 'a;
+
     /// Set the display rotation
     ///
     /// This method resets the cursor but does not clear the screen.
-    fn set_rotation(&mut self, rot: DisplayRotation) -> Result<(), TerminalModeError> {
-        self.set_rotation(rot).terminal_err()?;
-        // Need to reset cursor position, otherwise coordinates can become invalid
-        self.reset_pos()
+    fn set_rotation<'a>(&'a mut self, rot: DisplayRotation) -> Self::SetRotationFuture<'a> {
+        async move {
+            self.set_rotation(rot).await.terminal_err()?;
+            // Need to reset cursor position, otherwise coordinates can become invalid
+            self.reset_pos().await
+        }
     }
 
     /// Initialise the display in page mode (i.e. a byte walks down a column of 8 pixels) with
     /// column 0 on the left and column _(SIZE::Width::U8 - 1)_ on the right, but no automatic line
     /// wrapping.
-    fn init(&mut self) -> Result<(), TerminalModeError> {
-        self.init_with_addr_mode(AddrMode::Page).terminal_err()?;
-        self.reset_pos()?;
-        Ok(())
+    fn init<'a>(&'a mut self) -> Self::InitFuture<'a> {
+        async move {
+            self.init_with_addr_mode(AddrMode::Page).await.terminal_err()?;
+            self.reset_pos().await?;
+            Ok(())
+        }
     }
 }
 
@@ -168,9 +180,9 @@ where
     SIZE: TerminalDisplaySize,
 {
     /// Clear the display and reset the cursor to the top left corner
-    pub fn clear(&mut self) -> Result<(), TerminalModeError> {
+    pub async fn clear(&mut self) -> Result<(), TerminalModeError> {
         // Let the chip handle line wrapping so we can fill the screen with blanks faster
-        self.set_addr_mode(AddrMode::Horizontal).terminal_err()?;
+        self.set_addr_mode(AddrMode::Horizontal).await.terminal_err()?;
 
         let offset_x = match self.rotation() {
             DisplayRotation::Rotate0 | DisplayRotation::Rotate270 => SIZE::OFFSETX,
@@ -184,30 +196,31 @@ where
             (offset_x, SIZE::OFFSETY),
             (SIZE::WIDTH + offset_x, SIZE::HEIGHT + SIZE::OFFSETY),
         )
+            .await
         .terminal_err()?;
 
         // Clear the display
         for _ in 0..SIZE::CHAR_NUM {
-            self.draw(&[0; 8]).terminal_err()?;
+            self.draw(&[0; 8]).await.terminal_err()?;
         }
 
         // But for normal operation we manage the line wrapping
-        self.set_addr_mode(AddrMode::Page).terminal_err()?;
-        self.reset_pos()?;
+        self.set_addr_mode(AddrMode::Page).await.terminal_err()?;
+        self.reset_pos().await?;
 
         Ok(())
     }
 
     /// Print a character to the display
-    pub fn print_char(&mut self, c: char) -> Result<(), TerminalModeError> {
+    pub async fn print_char(&mut self, c: char) -> Result<(), TerminalModeError> {
         match c {
             '\n' => {
                 let CursorWrapEvent(new_line) = self.ensure_cursor()?.advance_line();
-                self.set_column(0).terminal_err()?;
-                self.set_row(new_line * 8).terminal_err()?;
+                self.set_column(0).await.terminal_err()?;
+                self.set_row(new_line * 8).await.terminal_err()?;
             }
             '\r' => {
-                self.set_column(0).terminal_err()?;
+                self.set_column(0).await.terminal_err()?;
                 let (_, cur_line) = self.ensure_cursor()?.get_position();
                 self.ensure_cursor()?.set_position(0, cur_line);
             }
@@ -222,10 +235,10 @@ where
                     }
                 };
 
-                self.draw(&bitmap).terminal_err()?;
+                self.draw(&bitmap).await.terminal_err()?;
 
                 // Increment character counter and potentially wrap line
-                self.advance_cursor()?;
+                self.advance_cursor().await?;
             }
         }
 
@@ -245,7 +258,7 @@ where
     /// Set the cursor position, in character coordinates.
     /// This is the (column, row) that the next character will be written to.
     /// If the position is out of bounds, an Err will be returned.
-    pub fn set_position(&mut self, column: u8, row: u8) -> Result<(), TerminalModeError> {
+    pub async fn set_position(&mut self, column: u8, row: u8) -> Result<(), TerminalModeError> {
         let (width, height) = self.ensure_cursor()?.get_dimensions();
         if column >= width || row >= height {
             Err(TerminalModeError::OutOfBounds)
@@ -260,12 +273,12 @@ where
             };
             match self.rotation() {
                 DisplayRotation::Rotate0 | DisplayRotation::Rotate180 => {
-                    self.set_column(offset_x + column * 8).terminal_err()?;
-                    self.set_row(SIZE::OFFSETY + row * 8).terminal_err()?;
+                    self.set_column(offset_x + column * 8).await.terminal_err()?;
+                    self.set_row(SIZE::OFFSETY + row * 8).await.terminal_err()?;
                 }
                 DisplayRotation::Rotate90 | DisplayRotation::Rotate270 => {
-                    self.set_column(offset_x + row * 8).terminal_err()?;
-                    self.set_row(SIZE::OFFSETY + column * 8).terminal_err()?;
+                    self.set_column(offset_x + row * 8).await.terminal_err()?;
+                    self.set_row(SIZE::OFFSETY + column * 8).await.terminal_err()?;
                 }
             }
             self.ensure_cursor()?.set_position(column, row);
@@ -274,7 +287,7 @@ where
     }
 
     /// Reset the draw area and move pointer to the top left corner
-    fn reset_pos(&mut self) -> Result<(), TerminalModeError> {
+    async fn reset_pos(&mut self) -> Result<(), TerminalModeError> {
         // Initialise the counter when we know it's valid
         let (w, h) = match self.rotation() {
             DisplayRotation::Rotate0 | DisplayRotation::Rotate180 => (SIZE::WIDTH, SIZE::HEIGHT),
@@ -283,19 +296,19 @@ where
         self.mode.cursor = Some(Cursor::new(w, h));
 
         // Reset cursor position
-        self.set_position(0, 0)?;
+        self.set_position(0, 0).await?;
 
         Ok(())
     }
 
     /// Advance the cursor, automatically wrapping lines and/or screens if necessary
     /// Takes in an already-unwrapped cursor to avoid re-unwrapping
-    fn advance_cursor(&mut self) -> Result<(), TerminalModeError> {
+    async fn advance_cursor(&mut self) -> Result<(), TerminalModeError> {
         let cursor = self.ensure_cursor()?;
 
         cursor.advance();
         let (c, r) = cursor.get_position();
-        self.set_position(c, r)?;
+        self.set_position(c, r).await?;
 
         Ok(())
     }
@@ -423,16 +436,5 @@ where
         }
 
         rotated
-    }
-}
-
-impl<DI, SIZE> core::fmt::Write for Ssd1306<DI, SIZE, TerminalMode>
-where
-    DI: WriteOnlyDataCommand,
-    SIZE: TerminalDisplaySize,
-{
-    fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
-        s.chars().map(move |c| self.print_char(c)).last();
-        Ok(())
     }
 }

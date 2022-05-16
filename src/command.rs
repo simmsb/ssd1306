@@ -92,7 +92,7 @@ pub enum Command {
 
 impl Command {
     /// Send command to SSD1306
-    pub fn send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
+    pub async fn send<DI>(self, iface: &mut DI) -> Result<(), DisplayError>
     where
         DI: WriteOnlyDataCommand,
     {
@@ -177,7 +177,7 @@ impl Command {
         };
 
         // Send command over the interface
-        iface.send_commands(U8(&data[0..len]))
+        iface.send_commands(U8(&data[0..len])).await
     }
 }
 
