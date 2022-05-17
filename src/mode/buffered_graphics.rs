@@ -59,7 +59,6 @@ where
     where
         Self: 'a;
 
-
     /// Set the display rotation
     ///
     /// This method resets the cursor but does not clear the screen.

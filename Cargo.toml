@@ -23,7 +23,7 @@ embedded-hal = "0.2.5"
 display-interface = { git = "https://github.com/simmsb/display-interface" }
 display-interface-i2c = { git = "https://github.com/simmsb/display-interface" }
 embedded-graphics-core = { version = "0.3.2", optional = true }
-embedded-hal-async = { git = "https://github.com/rust-embedded/embedded-hal" }
+embedded-hal-async = { version = "0.1.0-alpha.0" }
 
 [dev-dependencies]
 cortex-m = "0.7.2"
