@@ -46,14 +46,18 @@ pub trait DisplaySize {
 
     type ConfigureFuture<'a, W>: Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a,
+        W: 'a + WriteOnlyDataCommand;
 
     /// Send resolution and model-dependent configuration to the display
     ///
     /// See [`Command::ComPinConfig`](crate::Command::ComPinConfig)
     /// and [`Command::InternalIref`](crate::Command::InternalIref)
     /// for more information
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W>;
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W>;
 }
 
 /// Size information for the common 128x64 variants
@@ -66,9 +70,12 @@ impl DisplaySize for DisplaySize128x64 {
 
     type ConfigureFuture<'a, W> = impl Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a, W: 'a + WriteOnlyDataCommand;
 
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W> {
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W> {
         Command::ComPinConfig(true, false).send(iface)
     }
 }
@@ -83,9 +90,12 @@ impl DisplaySize for DisplaySize128x32 {
 
     type ConfigureFuture<'a, W> = impl Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a, W: 'a + WriteOnlyDataCommand;
 
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W> {
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W> {
         Command::ComPinConfig(false, false).send(iface)
     }
 }
@@ -100,9 +110,12 @@ impl DisplaySize for DisplaySize96x16 {
 
     type ConfigureFuture<'a, W> = impl Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a, W: 'a + WriteOnlyDataCommand;
 
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W> {
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W> {
         Command::ComPinConfig(false, false).send(iface)
     }
 }
@@ -119,9 +132,12 @@ impl DisplaySize for DisplaySize72x40 {
 
     type ConfigureFuture<'a, W> = impl Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a, W: 'a + WriteOnlyDataCommand;
 
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W> {
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W> {
         async move {
             Command::ComPinConfig(true, false).send(iface).await?;
             Command::InternalIref(true, true).send(iface).await
@@ -141,9 +157,12 @@ impl DisplaySize for DisplaySize64x48 {
 
     type ConfigureFuture<'a, W> = impl Future<Output = Result<(), DisplayError>> + 'a
     where
-        Self: 'a, W: 'a;
+        Self: 'a, W: 'a + WriteOnlyDataCommand;
 
-    fn configure<'a, W: WriteOnlyDataCommand>(&'a self, iface: &'a mut W) -> Self::ConfigureFuture<'a, W> {
+    fn configure<'a, W: WriteOnlyDataCommand>(
+        &'a self,
+        iface: &'a mut W,
+    ) -> Self::ConfigureFuture<'a, W> {
         Command::ComPinConfig(true, false).send(iface)
     }
 }
