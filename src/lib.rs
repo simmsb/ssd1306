@@ -104,7 +104,6 @@
 #![deny(unused_import_braces)]
 #![deny(unused_qualifications)]
 #![deny(broken_intra_doc_links)]
-#![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
 
 mod brightness;
